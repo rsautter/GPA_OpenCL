@@ -1,6 +1,13 @@
+#ifdef cl_khr_fp64
+    #pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#elif defined(cl_amd_fp64)
+    #pragma OPENCL EXTENSION cl_amd_fp64 : enable
+#else
+    #error "Double precision floating point not supported by OpenCL implementation."
+#endif
 /*
 =====================================
-getG2 -> return g2 fromthe assymetrical vector set 
+getG2 -> return g2 from the assymetrical vector set 
 =====================================
 	phases,mods -> polar coordinate vector
 	tableau -> matrix that shows whether a vector is symmetrical or (0 = symmetrical, 1=asymmetrical)
@@ -12,50 +19,54 @@ getG2 -> return g2 fromthe assymetrical vector set
 
 */
 
-__kernel void getG2(__global float *gx, __global float * gy, __global float *mods,__global int *tableau,
-		    __global float *partialX, __global float *partialY,__global float *partialMS, __global int* countAsym,
-		    __global float* g2,
-		    const int nelements
-
+__kernel void getG2(__global double *gx, __global double * gy, __global double *mods,__global int *tableau,
+		    __global double *partialX, __global double *partialY,__global double *partialMS, __global int* countAsym,
+		    __local double *tpartialX, __local double *tpartialY,__local double *tpartialMS, __local int* tcountAsym
 ){
-	int id = get_global_id(0);
-	float div = 0.0f;
+	int gid = get_global_id(0);
+	int lid = get_local_id(0);
+	int gsize = get_global_size(0);
+	int lsize = get_local_size(0);
+
 	//every element verify if it is a symmetric vector
-	if(tableau[id] == 1){
-		partialX[id] = 0.0f;
-		partialY[id] = 0.0f;
-		partialMS[id] = 0.0f;
-		countAsym[id] = 0;
+	if(tableau[gid] > 0){
+		tpartialX[lid] = 0.0;
+		tpartialY[lid] = 0.0;
+		tpartialMS[lid] = 0.0;
+		tcountAsym[lid] = 0;
 	}else{
-		partialX[id] = gx[id];
-		partialY[id] = gy[id];
-		partialMS[id] = mods[id];
-		countAsym[id] = 1;
+		tpartialX[lid] = gx[gid];
+		tpartialY[lid] = gy[gid];
+		tpartialMS[lid] = mods[gid];
+		tcountAsym[lid] = 1;
 	}
+
+	int oldStride = lsize;	
 	// measuring diversity,using partial sum method
-	for (int stride = nelements/2; stride>0; stride=stride/2){
-		barrier(CLK_GLOBAL_MEM_FENCE); //wait everyone update
-		if (id < stride){
-        		partialX[id] += partialX[id + stride];
-			partialY[id] += partialY[id + stride];
-			partialMS[id] += partialMS[id + stride];
-			countAsym[id] += countAsym[id+stride];
+	for (int stride = lsize/2; stride>0; stride = stride/2){
+		barrier(CLK_LOCAL_MEM_FENCE); //wait everyone update
+		if (lid < stride){
+        		tpartialX[lid] += tpartialX[lid+stride];
+			tpartialY[lid] += tpartialY[lid+stride];
+			tpartialMS[lid] += tpartialMS[lid+stride];
+			tcountAsym[lid] += tcountAsym[lid+stride];
 		}
-	}
-	barrier(CLK_GLOBAL_MEM_FENCE); //wait everyone update
-	if(nelements%2 != 0 && id == 0){
-		partialX[id] += partialX[nelements-1];
-		partialY[id] += partialY[nelements-1];
-		partialMS[id] += partialMS[nelements-1];
-		countAsym[id] += countAsym[nelements-1];
-	}
-	if(id == 0){
-		if(countAsym[id]<3)
-			g2[id] = 0.0f;
-		else {
-			div = sqrt(pow(partialX[id],2.0f)+pow(partialY[id],2.0f)) / partialMS[id];
-			g2[id] = (convert_float(countAsym[id])/convert_float(nelements)) * (2.0f-div);
+		if(oldStride%2 != 0 && lid == stride -1){
+			tpartialX[lid] += tpartialX[lid+stride+1];
+			tpartialY[lid] += tpartialY[lid+stride+1];
+			tpartialMS[lid] += tpartialMS[lid+stride+1];
+			tcountAsym[lid] += tcountAsym[lid+stride+1];
 		}
+		oldStride = stride;
 	}
+	barrier(CLK_LOCAL_MEM_FENCE); //wait everyone update
+	//merge each local sum in an array
+	if(lid == 0){
+		partialX[get_group_id(0)] = tpartialX[lid];
+		partialY[get_group_id(0)] = tpartialY[lid];
+		partialMS[get_group_id(0)] = tpartialMS[lid];
+		countAsym[get_group_id(0)] = tcountAsym[lid];
+	}
+	
 }
 
