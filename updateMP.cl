@@ -78,8 +78,8 @@ __kernel void updateMP(__global const double *mat, __global double *phases, __gl
 
 	//Polar coordinate section
 	mods[p] = sqrt(gx[p]*gx[p]+gy[p]*gy[p]);
-	phases[p] = atan2(gy[p],gx[p])*(180.0/M_PI);
+	phases[p] = atan2(gy[p],gx[p]);
 	if(isnan(phases[p]) || isinf(phases[p])){
-		phases[p] = -90.0;
+		phases[p] = -M_PI/2.0;
 	}
 }

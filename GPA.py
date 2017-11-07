@@ -65,7 +65,7 @@ class GPA:
         return data
 
     def _update_asymmetric_tableau(self,mtol,ftol):
-        k = self.readKernel("asymmetry_r.cl")
+        k = self.readKernel("asymmetry_conc.cl")
         prg = cl.Program(self.ctx,k).build()
         self.run2 = prg.asymmetry_r(self.queue, self.dim, None,self.ph,self.md,self.tb,numpy.float64(mtol),numpy.float64(ftol))
         self.run2.wait()
